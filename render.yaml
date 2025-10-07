@@ -5,11 +5,8 @@ services:
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python main.py"
-    pythonVersion: "3.12"
+    pythonVersion: "3.13"
     envVars:
       - key: BOT_TOKEN
-        sync: false
       - key: CHAT_ID
-        sync: false
       - key: RENDER_URL
-        value: "https://bounceland-food-bot.onrender.com"
