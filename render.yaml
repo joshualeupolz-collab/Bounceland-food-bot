@@ -1,10 +1,11 @@
 services:
   - type: web
-    name: Bounceland-food-bot   # <- hier muss dein Render-Service-Name stehen
+    name: Bounceland-food-bot
     env: python
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python main.py"
+    pythonVersion: "3.12"
     envVars:
       - key: BOT_TOKEN
         sync: false
