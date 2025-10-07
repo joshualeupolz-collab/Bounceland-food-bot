@@ -1,12 +1,7 @@
 services:
   - type: web
-    name: Bounceland-food-bot
+    name: bounceland-food-bot
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
-    pythonVersion: "3.13"
-    envVars:
-      - key: BOT_TOKEN
-      - key: CHAT_ID
-      - key: RENDER_URL
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
