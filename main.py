@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -64,12 +65,13 @@ def home():
     return "Bot is alive"
 
 # -----------------------------
-# Start
+# Webhook setzen + Start
 # -----------------------------
-if __name__ == "__main__":
-    # Set Telegram Webhook
+async def main():
     WEBHOOK_URL = RENDER_URL + "/webhook"
-    logging.info(f"✅ Setze Webhook: {WEBHOOK_URL}")
-    application.bot.set_webhook(WEBHOOK_URL)
-
+    await application.bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"✅ Webhook gesetzt: {WEBHOOK_URL}")
     app.run(host="0.0.0.0", port=PORT)
+
+if __name__ == "__main__":
+    asyncio.run(main())
