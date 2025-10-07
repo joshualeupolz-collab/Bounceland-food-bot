@@ -1,13 +1,14 @@
 services:
   - type: web
-    name: bounceland-bot
+    name: Bounceland-food-bot   # <- hier muss dein Render-Service-Name stehen
     env: python
-    region: frankfurt
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: CHAT_ID
         sync: false
+      - key: RENDER_URL
+        value: "https://bounceland-food-bot.onrender.com"
