@@ -1,77 +1,126 @@
 import os
+import json
 import logging
-import asyncio
-from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 # -----------------------------
 # Konfiguration
 # -----------------------------
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+RENDER_URL = os.environ.get("RENDER_URL")  # z.B. https://bounceland-food-bot.onrender.com
 CHAT_ID = int(os.environ.get("CHAT_ID", "0"))
-PORT = int(os.environ.get("PORT", 10000))
-RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL")
+OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 
-if not BOT_TOKEN or not CHAT_ID or not RENDER_URL:
-    raise RuntimeError("❌ BOT_TOKEN, CHAT_ID oder RENDER_EXTERNAL_URL nicht gesetzt!")
-
-logging.basicConfig(level=logging.INFO)
-
-# -----------------------------
-# Flask Webserver
-# -----------------------------
-app = Flask(__name__)
-
-# -----------------------------
-# Poll/Keyboard
-# -----------------------------
+POLL_FILE = "polls.json"
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+PORT = int(os.environ.get("PORT", 10000))
 
-def build_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton(day, callback_data=day)] for day in DAYS])
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
+if not BOT_TOKEN or not RENDER_URL:
+    raise RuntimeError("❌ BOT_TOKEN oder RENDER_URL nicht gesetzt!")
 
 # -----------------------------
-# Telegram Handlers
+# Hilfsfunktionen
 # -----------------------------
-async def cmd_postnow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"/postnow aufgerufen von {update.effective_user.first_name} ({update.effective_user.id})")
-    text = "✅ Test-Umfrage gepostet!"
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=build_keyboard())
+def load_polls():
+    if not os.path.exists(POLL_FILE):
+        return {}
+    with open(POLL_FILE, "r") as f:
+        return json.load(f)
 
+def save_polls(polls):
+    with open(POLL_FILE, "w") as f:
+        json.dump(polls, f)
+
+def format_poll_text(poll):
+    text = "🍽 *Weekly Meal Participation*\n\n"
+    for day, users in poll.items():
+        user_list = "\n".join([f"- {u}" for u in users]) if users else "–"
+        text += f"*{day}*: {user_list}\n\n"
+    return text
+
+def build_keyboard(polls=None, user_name=None):
+    # Optional: mark already selected buttons
+    buttons = []
+    for day in DAYS:
+        label = day
+        if polls and user_name and day in polls and user_name in polls[day]:
+            label = f"✅ {day}"
+        buttons.append([InlineKeyboardButton(label, callback_data=day)])
+    return InlineKeyboardMarkup(buttons)
+
+# -----------------------------
+# Callback für Button-Klicks
+# -----------------------------
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer(f"Du hast {query.data} gewählt!")
-    logging.info(f"{query.from_user.first_name} hat {query.data} gewählt.")
+    user = query.from_user.first_name
+    day = query.data
+    data = load_polls()
+    polls = data.get("polls", {})
+
+    if day not in polls:
+        polls[day] = []
+
+    if user in polls[day]:
+        polls[day].remove(user)
+    else:
+        polls[day].append(user)
+
+    data["polls"] = polls
+    save_polls(data)
+
+    await query.answer("✅ Updated!")
+    text = format_poll_text(polls)
+    await query.edit_message_text(text=text, reply_markup=build_keyboard(polls, user), parse_mode="Markdown")
 
 # -----------------------------
-# Telegram Application
+# Wochen-Umfrage posten
 # -----------------------------
-application = Application.builder().token(BOT_TOKEN).build()
-application.add_handler(CommandHandler("postnow", cmd_postnow))
-application.add_handler(CallbackQueryHandler(handle_button))
+async def post_weekly_poll(context: ContextTypes.DEFAULT_TYPE):
+    polls = {day: [] for day in DAYS}
+    save_polls({"polls": polls})
+    text = format_poll_text(polls)
+    await context.bot.send_message(
+        chat_id=CHAT_ID,
+        text=text,
+        reply_markup=build_keyboard(),
+        parse_mode="Markdown"
+    )
 
 # -----------------------------
-# Flask Webhook Route
+# Manueller /postnow Befehl
 # -----------------------------
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "OK"
-
-@app.route("/")
-def home():
-    return "Bot is alive"
+async def cmd_postnow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if OWNER_ID and user_id != OWNER_ID:
+        await update.message.reply_text("⛔️ Only the owner can use this command.")
+        return
+    await post_weekly_poll(context)
+    await update.message.reply_text("✅ Neue Wochenumfrage gepostet!")
 
 # -----------------------------
-# Webhook setzen + Start
+# Main
 # -----------------------------
-async def main():
-    WEBHOOK_URL = RENDER_URL + "/webhook"
-    await application.bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"✅ Webhook gesetzt: {WEBHOOK_URL}")
-    app.run(host="0.0.0.0", port=PORT)
+def main():
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Handler
+    application.add_handler(CommandHandler("postnow", cmd_postnow))
+    application.add_handler(CallbackQueryHandler(handle_button))
+
+    # Webhook starten
+    logging.info(f"✅ Setze Webhook: {RENDER_URL}/webhook")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{RENDER_URL}/webhook"
+    )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
