@@ -1,68 +1,63 @@
 import os
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import (
-    Application, CommandHandler, ContextTypes
-)
-import logging
-import asyncio
+from telegram.ext import Application, CommandHandler
 
-# Logging aktivieren
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
-# Umgebungsvariablen
+# === Environment Variablen ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL") or "https://bounceland-bot.onrender.com"
+RENDER_URL = os.getenv("RENDER_URL")  # z. B. "https://bounceland-bot.onrender.com"
 
-# Flask App für Webhook-Endpoint
+if not BOT_TOKEN or not RENDER_URL:
+    raise RuntimeError("❌ BOT_TOKEN oder RENDER_URL nicht gesetzt!")
+
+# === Flask Setup ===
 app = Flask(__name__)
 
-# Telegram Application initialisieren
+# === Telegram Bot Setup ===
 application = Application.builder().token(BOT_TOKEN).build()
 
-# --- Befehle ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Hallo! Ich bin dein Webhook-Bot auf Render!")
 
-async def postnow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ /postnow funktioniert!")
+# --- Commands ---
+async def start(update: Update, context):
+    await update.message.reply_text("👋 Hallo! Der Webhook funktioniert ✅")
 
-# Handler registrieren
+
+async def postnow(update: Update, context):
+    await update.message.reply_text("📝 Test: /postnow funktioniert!")
+
+
+# === Command-Handler hinzufügen ===
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("postnow", postnow))
 
 
-# --- Flask Route für Telegram Updates ---
+# === Flask-Route für Telegram Webhook ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Empfängt Updates von Telegram und leitet sie ans Bot-Framework weiter"""
+    """Wird von Telegram aufgerufen, wenn eine Nachricht eingeht."""
     update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
-    return "OK", 200
+    application.update_queue.put_nowait(update)
+    return "ok", 200
 
 
-# --- Root Endpoint zum Testen ---
 @app.route("/")
 def home():
-    return "🤖 Bot ist aktiv (Webhook-Version läuft auf Render)"
+    return "🤖 Bot läuft über Webhook!", 200
 
 
-# --- Bot Start ---
-async def set_webhook():
-    """Registriert den Webhook bei Telegram"""
-    webhook_url = f"{WEBHOOK_URL}/webhook"
+# === Bot-Start (Webhook setzen) ===
+async def setup_webhook():
+    webhook_url = f"{RENDER_URL}/webhook"
     await application.bot.set_webhook(webhook_url)
-    logging.info(f"✅ Webhook gesetzt auf: {webhook_url}")
+    print(f"✅ Webhook gesetzt auf: {webhook_url}")
 
 
 if __name__ == "__main__":
-    # Webhook beim Start registrieren
-    asyncio.run(set_webhook())
+    import asyncio
 
-    # Flask starten (Render erkennt Port automatisch)
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    # Webhook setzen beim Start
+    asyncio.run(setup_webhook())
+
+    # Flask starten
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
